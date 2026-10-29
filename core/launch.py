@@ -20,6 +20,11 @@ HERONITE_DATA_DIR = os.environ.get("HERONITE_DATA_DIR", "/home/aoitako/.local/sh
 LUTRIS_PREFIX_BASE = os.path.expanduser("~/.local/share/lutris/prefixes")
 GAME_WAIT_SECONDS = float(os.environ.get("TRAINERDECK_GAME_WAIT", "30"))
 
+GAME_EXE_OVERRIDES = {
+    "ubisoftconnect": "/home/aoitako/Games/Heroic/Ubisoft Game Launcher/UbisoftConnect.exe",
+    "stellarblade": "/home/aoitako/Games/Heroic/Stellar Blade/SB/Binaries/Win64/SB-Win64-Shipping.exe",
+}
+
 
 def find_proton_tool_dirs():
     found = []
@@ -149,11 +154,14 @@ def _heroic_prefix_for(game_name: str):
     return best
 
 
-def find_game_exe(prefix: str, game_name: str):
+def find_game_exe(prefix: str, game_name: str) -> str | None:
     """Find a windows game exe inside a wine prefix by name."""
     target = _norm(game_name)
     if not target:
         return None
+    override = GAME_EXE_OVERRIDES.get(target)
+    if override and os.path.isfile(override):
+        return override
     base = os.path.join(prefix, "drive_c")
     if not os.path.isdir(base):
         return None
@@ -267,17 +275,9 @@ def launch_trainer(backend: str, trainer: dict) -> dict:
     if not ok or not wb or not prefix:
         return {"ok": False, "backend": backend, "error": err or f"Backend context failed: {backend}"}
 
-    # FLiNG flow: game first, then trainer
-    game_exe = None
-    if game:
-        game_exe = find_game_exe(prefix, game)
-    if game_exe and os.path.isfile(game_exe):
-        game_log = f"{log_dir}/{backend}-game-{os.getpid()}-{time.time()}.log"
-        gres = _spawn(wb, game_exe, prefix, backend + "-game", game_log)
-        if not gres.get("ok"):
-            return {"ok": False, "backend": backend, "error": f"Game launch failed: {gres.get('error')}"}
-        time.sleep(GAME_WAIT_SECONDS)
-
+    # Launch the trainer directly. (Auto-launching the game via raw wine is
+    # unreliable — games often need Heroic/Steam's full env — so the user is
+    # expected to have the game running first; the trainer then attaches.)
     trainer_log = f"{log_dir}/{backend}-{os.getpid()}-{time.time()}.log"
     return _spawn(wb, exe, prefix, backend, trainer_log)
 

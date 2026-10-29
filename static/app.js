@@ -8,6 +8,7 @@ const downloadStatus = document.getElementById("download-status");
 const libraryList = document.getElementById("library-list");
 const backendStatus = document.getElementById("backend-status");
 const searchInput = document.getElementById("game-search");
+const launchStatus = document.getElementById("launch-status");
 
 let selectedGame = null;
 
@@ -145,7 +146,7 @@ async function refreshLibrary() {
           method: "POST",
         });
         const d = await r.json();
-        alert(JSON.stringify(d));
+        launchStatus.textContent = d.ok ? `Launched (pid ${d.pid})` : `Launch failed: ${d.error || "unknown"}`;
       });
       launchCell.appendChild(btn);
       launchCell.appendChild(document.createTextNode(" "));
@@ -161,7 +162,7 @@ async function refreshLibrary() {
         method: "POST",
       });
       const d = await r.json();
-      alert(JSON.stringify(d));
+      launchStatus.textContent = d.ok ? `Launched (pid ${d.pid})` : `Launch failed: ${d.error || "unknown"}`;
     });
     launchCell.appendChild(autoBtn);
     tb.appendChild(tr);
