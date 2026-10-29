@@ -133,7 +133,7 @@ async function refreshLibrary() {
     const tr = document.createElement("tr");
     tr.innerHTML = `<td>${t.id}</td><td>${t.game}</td><td>${t.filename}</td><td>${t.size ? (t.size / 1024).toFixed(1) + " KB" : "?"}</td><td></td><td><button class="btn launch-del" data-id="${t.id}" data-del="1">Delete</button></td>`;
     const launchCell = tr.children[4];
-    const backends = ["steam", "heroic", "lutris", "faugus", "wine"];
+    const backends = ["steam", "heroic", "lutris", "faugus", "heronite", "wine"];
     for (const b of backends) {
       const btn = document.createElement("button");
       btn.className = "btn";

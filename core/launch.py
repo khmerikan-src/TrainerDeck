@@ -15,6 +15,7 @@ HEROIC_PREFIX_BASE = "/home/aoitako/Games/Heroic/Prefixes"
 HEROIC_CONFIG_DIR = "/home/aoitako/.config/heroic"
 FAUGUS_PREFIX = "/home/aoitako/Faugus/default"
 FAUGUS_LAUNCHER_DIR = "/home/aoitako/.local/share/faugus-launcher"
+HERONITE_DATA_DIR = os.environ.get("HERONITE_DATA_DIR", "/home/aoitako/.local/share/heronite")
 LUTRIS_PREFIX_BASE = os.path.expanduser("~/.local/share/lutris/prefixes")
 
 
@@ -210,6 +211,14 @@ def launch_trainer(backend: str, trainer: dict) -> dict:
         if not wb:
             wb = find_wine_bin()
         return _spawn(wb, exe, FAUGUS_PREFIX, backend, f"{log_dir}/faugus-{os.getpid()}-{time.time()}.log")
+
+    if backend == "heronite":
+        wb = find_wine_bin()
+        prefix = HERONITE_DATA_DIR
+        if not (os.path.isdir(prefix) and (os.path.isdir(os.path.join(prefix, "drive_c")) or os.path.isdir(os.path.join(prefix, "pfx")))):
+            he = _heroic_prefix_for(game)
+            prefix = he.get("wine_prefix") if he else "/home/aoitako/Games/Heroic/Prefixes"
+        return _spawn(wb, exe, prefix, backend, f"{log_dir}/heronite-{os.getpid()}-{time.time()}.log")
 
     if backend == "wine":
         wb = find_wine_bin()

@@ -34,6 +34,7 @@ def backends():
         "heroic": len(launch._heroic_prefixes()) > 0,
         "lutris": os.path.isdir(os.path.expanduser("~/.local/share/lutris")),
         "faugus": os.path.isdir("/home/aoitako/Faugus/default"),
+        "heronite": os.path.isdir(launch.HERONITE_DATA_DIR),
     }
 
 
