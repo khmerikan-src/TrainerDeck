@@ -35,6 +35,7 @@ def backends():
         "lutris": os.path.isdir(os.path.expanduser("~/.local/share/lutris")),
         "faugus": os.path.isdir("/home/aoitako/Faugus/default"),
         "heronite": os.path.isdir(launch.HERONITE_DATA_DIR),
+        "wand": os.path.isfile("/home/aoitako/.local/bin/wand-acs"),
     }
 
 

@@ -260,6 +260,38 @@ def launch_trainer(backend: str, trainer: dict) -> dict:
     if not exe or not os.path.exists(exe):
         return {"ok": False, "backend": backend, "error": f"Trainer exe not found: {exe}"}
     game = trainer.get("game") or ""
+
+    # wand-acs backend: delegate to the existing wand-acs CLI, which copies the
+    # trainer into the AC Shadows prefix (with the .NET 4.8 shim) and launches
+    # it there. This is the reliable path for AC Shadows trainers.
+    if backend in ("wand", "acs"):
+        import shutil
+        wand = shutil.which("wand-acs") or "/home/aoitako/.local/bin/wand-acs"
+        if not os.path.isfile(wand):
+            return {"ok": False, "backend": backend, "error": "wand-acs not found"}
+        log_dir = os.path.expanduser("~/.trainerdeck/launch")
+        os.makedirs(log_dir, exist_ok=True)
+        log_path = f"{log_dir}/wand-{os.getpid()}-{time.time()}.log"
+        try:
+            proc = subprocess.Popen(
+                [wand, "--trainer", str(exe)],
+                stdout=open(log_path, "ab"),
+                stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+            time.sleep(2)
+            alive = proc.poll() is None
+            return {
+                "ok": alive,
+                "backend": backend,
+                "pid": proc.pid,
+                "cmd": [wand, "--trainer", str(exe)],
+                "log": log_path,
+                "error": None if alive else "trainer exited immediately",
+            }
+        except Exception as e:
+            return {"ok": False, "backend": backend, "error": str(e)}
     log_dir = os.path.expanduser("~/.trainerdeck/launch")
     os.makedirs(log_dir, exist_ok=True)
 
