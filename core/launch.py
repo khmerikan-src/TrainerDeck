@@ -1,8 +1,9 @@
-"""Launch trainers through Wine/Proton backends (Steam, Heroic, Lutris, Faugus, Wine)."""
+"""Launch trainers through Wine/Proton backends (Steam, Heroic, Lutris, Faugus, Heronite, Wine)."""
 
 import glob
 import json
 import os
+import re
 import subprocess
 import time
 
@@ -17,6 +18,7 @@ FAUGUS_PREFIX = "/home/aoitako/Faugus/default"
 FAUGUS_LAUNCHER_DIR = "/home/aoitako/.local/share/faugus-launcher"
 HERONITE_DATA_DIR = os.environ.get("HERONITE_DATA_DIR", "/home/aoitako/.local/share/heronite")
 LUTRIS_PREFIX_BASE = os.path.expanduser("~/.local/share/lutris/prefixes")
+GAME_WAIT_SECONDS = float(os.environ.get("TRAINERDECK_GAME_WAIT", "30"))
 
 
 def find_proton_tool_dirs():
@@ -53,7 +55,6 @@ def find_wine_bin():
 def proton_env(wine_bin: str) -> dict:
     env = dict(os.environ)
     env["WINEPREFIX"] = env.get("WINEPREFIX", "")
-    # point LD_LIBRARY_PATH at this proton's wine libs
     tool_dir = os.path.dirname(os.path.dirname(os.path.dirname(wine_bin)))
     for sub in ("", "/wine", "/wine/x86_64-unix"):
         p = os.path.join(tool_dir, "files", "lib", *sub.split("/")) if sub else os.path.join(tool_dir, "files", "lib")
@@ -130,7 +131,7 @@ def _heroic_prefix_for(game_name: str):
         if not p or not os.path.isdir(p):
             continue
         score = 0
-        if target and target and target in _norm(p):
+        if target and target in _norm(p):
             score += 10
         if e.get("name", "") and target and target in _norm(e.get("name", "")):
             score += 5
@@ -148,35 +149,57 @@ def _heroic_prefix_for(game_name: str):
     return best
 
 
-def launch_trainer(backend: str, trainer: dict) -> dict:
-    exe = trainer.get("path") or trainer.get("file_path")
-    if not exe or not os.path.exists(exe):
-        return {"ok": False, "backend": backend, "error": f"Trainer exe not found: {exe}"}
-    game = trainer.get("game") or ""
-    log_dir = os.path.expanduser("~/.trainerdeck/launch")
-    os.makedirs(log_dir, exist_ok=True)
+def find_game_exe(prefix: str, game_name: str):
+    """Find a windows game exe inside a wine prefix by name."""
+    target = _norm(game_name)
+    if not target:
+        return None
+    base = os.path.join(prefix, "drive_c")
+    if not os.path.isdir(base):
+        return None
+    best = None
+    best_size = -1
+    skip = {"windows", "internet", "accessories", "temp", "users", "startmenu", "desktop", "progdata", "common", "updat", "unins", "microsoft"}
+    for dirpath, dirnames, filenames in os.walk(base):
+        rel = dirpath[len(base):].lower().replace("\\", "/")
+        segs = [s for s in rel.split("/") if s]
+        if any(s in skip for s in segs):
+            dirnames[:] = []
+            continue
+        for fn in filenames:
+            if not fn.lower().endswith(".exe"):
+                continue
+            if not (target in _norm(fn) or any(target in _norm(s) for s in segs)):
+                continue
+            fp = os.path.join(dirpath, fn)
+            try:
+                sz = os.path.getsize(fp)
+            except Exception:
+                continue
+            if sz > best_size:
+                best = fp
+                best_size = sz
+    return best
 
+
+def _resolve_backend_ctx(backend: str, game: str, trainer: dict):
+    """Resolve wine bin + prefix for wine-based backends. Returns dict."""
     if backend == "steam":
         appid = trainer.get("appid") or 0
         prefix = f"{HOME}/.steam/steam/steamapps/compatdata/{appid}/pfx"
         wb = find_wine_bin()
-        if not wb:
-            return {"ok": False, "backend": backend, "error": "No proton/wine binary found"}
-        return _spawn(wb, exe, prefix, backend, f"{log_dir}/steam-{os.getpid()}-{time.time()}.log")
-
+        return {"backend": backend, "wine_bin": wb, "wine_prefix": prefix, "ok": bool(wb), "error": None if wb else "No proton/wine binary found"}
     if backend == "heroic":
         he = _heroic_prefix_for(game)
         if not he or not he.get("wine_prefix") or not os.path.isdir(he["wine_prefix"]):
-            return {"ok": False, "backend": backend, "error": "No Heroic prefix for this game"}
+            return {"backend": backend, "wine_bin": None, "wine_prefix": None, "ok": False, "error": "No Heroic prefix for this game"}
         wb = he.get("wine_bin") or ""
         if wb and os.path.isfile(wb):
             wb = wb[: -len("/proton")] + "/files/bin/wine"
         if not wb or not os.path.exists(wb):
             wb = find_wine_bin()
-        return _spawn(wb, exe, he["wine_prefix"], backend, f"{log_dir}/heroic-{os.getpid()}-{time.time()}.log")
-
+        return {"backend": backend, "wine_bin": wb, "wine_prefix": he["wine_prefix"], "ok": True, "error": None}
     if backend == "lutris":
-        # find lutris prefix by game
         prefix = None
         lutris_games = os.path.join(os.path.expanduser("~"), ".local", "share", "lutris", "games")
         if os.path.isdir(lutris_games):
@@ -198,8 +221,7 @@ def launch_trainer(backend: str, trainer: dict) -> dict:
                     break
         if not wb:
             wb = find_wine_bin()
-        return _spawn(wb, exe, prefix, backend, f"{log_dir}/lutris-{os.getpid()}-{time.time()}.log")
-
+        return {"backend": backend, "wine_bin": wb, "wine_prefix": prefix, "ok": True, "error": None}
     if backend == "faugus":
         wb = None
         for d in find_proton_tool_dirs():
@@ -210,25 +232,55 @@ def launch_trainer(backend: str, trainer: dict) -> dict:
                     break
         if not wb:
             wb = find_wine_bin()
-        return _spawn(wb, exe, FAUGUS_PREFIX, backend, f"{log_dir}/faugus-{os.getpid()}-{time.time()}.log")
-
+        return {"backend": backend, "wine_bin": wb, "wine_prefix": FAUGUS_PREFIX, "ok": True, "error": None}
     if backend == "heronite":
         wb = find_wine_bin()
         prefix = HERONITE_DATA_DIR
         if not (os.path.isdir(prefix) and (os.path.isdir(os.path.join(prefix, "drive_c")) or os.path.isdir(os.path.join(prefix, "pfx")))):
             he = _heroic_prefix_for(game)
             prefix = he.get("wine_prefix") if he else "/home/aoitako/Games/Heroic/Prefixes"
-        return _spawn(wb, exe, prefix, backend, f"{log_dir}/heronite-{os.getpid()}-{time.time()}.log")
-
+        return {"backend": backend, "wine_bin": wb, "wine_prefix": prefix, "ok": True, "error": None}
     if backend == "wine":
         wb = find_wine_bin()
         prefix = os.environ.get("TRAINERDECK_WINEPREFIX") or (trainer.get("wine_prefix") or "/home/aoitako/.wine")
-        return _spawn(wb or "wine", exe, prefix, backend, f"{log_dir}/wine-{os.getpid()}-{time.time()}.log")
+        return {"backend": backend, "wine_bin": wb or "wine", "wine_prefix": prefix, "ok": True, "error": None}
+    return {"backend": backend, "wine_bin": None, "wine_prefix": None, "ok": False, "error": f"Unknown backend: {backend}"}
 
-    return {"ok": False, "backend": backend, "error": f"Unknown backend: {backend}"}
+
+def launch_trainer(backend: str, trainer: dict) -> dict:
+    exe = trainer.get("path") or trainer.get("file_path")
+    if not exe or not os.path.exists(exe):
+        return {"ok": False, "backend": backend, "error": f"Trainer exe not found: {exe}"}
+    game = trainer.get("game") or ""
+    log_dir = os.path.expanduser("~/.trainerdeck/launch")
+    os.makedirs(log_dir, exist_ok=True)
+
+    ctx = _resolve_backend_ctx(backend, game, trainer)
+    wb = ctx.get("wine_bin")
+    prefix = ctx.get("wine_prefix")
+    ok = ctx.get("ok")
+    err = ctx.get("error")
+
+    if backend == "wine" and not wb:
+        wb = "wine"
+
+    if not ok or not wb or not prefix:
+        return {"ok": False, "backend": backend, "error": err or f"Backend context failed: {backend}"}
+
+    # FLiNG flow: game first, then trainer
+    game_exe = None
+    if game:
+        game_exe = find_game_exe(prefix, game)
+    if game_exe and os.path.isfile(game_exe):
+        game_log = f"{log_dir}/{backend}-game-{os.getpid()}-{time.time()}.log"
+        gres = _spawn(wb, game_exe, prefix, backend + "-game", game_log)
+        if not gres.get("ok"):
+            return {"ok": False, "backend": backend, "error": f"Game launch failed: {gres.get('error')}"}
+        time.sleep(GAME_WAIT_SECONDS)
+
+    trainer_log = f"{log_dir}/{backend}-{os.getpid()}-{time.time()}.log"
+    return _spawn(wb, exe, prefix, backend, trainer_log)
 
 
 def game_slug_safe(name: str) -> str:
-    import re
-
     return re.sub(r"[^a-z0-9]+", "-", (name or "").lower()).strip("-")
