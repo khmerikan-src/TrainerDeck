@@ -141,10 +141,8 @@ async function refreshLibrary() {
       btn.dataset.backend = b;
       btn.textContent = b;
       btn.addEventListener("click", async () => {
-        const r = await fetch(`/api/library/${t.id}/launch`, {
+        const r = await fetch(`/api/library/${t.id}/launch?backend=${encodeURIComponent(b)}`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ backend: b }),
         });
         const d = await r.json();
         alert(JSON.stringify(d));
@@ -159,10 +157,8 @@ async function refreshLibrary() {
     autoBtn.dataset.backend = "auto";
     autoBtn.textContent = "auto";
     autoBtn.addEventListener("click", async () => {
-      const r = await fetch(`/api/library/${t.id}/launch`, {
+      const r = await fetch(`/api/library/${t.id}/launch?backend=auto`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ backend: "auto" }),
       });
       const d = await r.json();
       alert(JSON.stringify(d));

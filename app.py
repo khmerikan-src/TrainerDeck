@@ -4,7 +4,7 @@ import shutil
 from pathlib import Path
 
 import httpx
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -130,7 +130,7 @@ def api_library_delete(tid: int):
 
 
 @app.post("/api/library/{tid}/launch")
-def api_library_launch(tid: int, backend: str = "auto"):
+def api_library_launch(tid: int, backend: str = Query(default="auto")):
     tr = library.get_trainer(tid)
     if not tr:
         raise HTTPException(status_code=404, detail="Trainer not in library")
